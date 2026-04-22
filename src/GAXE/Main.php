@@ -10,6 +10,7 @@ use pocketmine\utils\Config;
 use pocketmine\utils\TextFormat;
 use pocketmine\item\VanillaItems;
 use pocketmine\item\enchantment\StringToEnchantmentParser;
+use pocketmine\item\enchantment\EnchantmentInstance;
 
 class Main extends PluginBase {
 
@@ -32,17 +33,20 @@ class Main extends PluginBase {
 
         if($command->getName() === "gaxe") {
 
+            // Permission check
             if(!$sender->hasPermission("gaxe.use")) {
                 $sender->sendMessage($this->msg("messages.no-permission"));
                 return true;
             }
 
-            $cooldownTime = $this->getConfig()->get("cooldown");
-            $name = $sender->getName();
+            $cooldownTime = (int)$this->getConfig()->get("cooldown");
+            $name = strtolower($sender->getName());
             $time = time();
 
+            // Cooldown check
             if($this->cooldowns->exists($name)) {
-                $lastUse = $this->cooldowns->get($name);
+                $lastUse = (int)$this->cooldowns->get($name);
+
                 if(($time - $lastUse) < $cooldownTime) {
                     $remaining = $cooldownTime - ($time - $lastUse);
                     $sender->sendMessage(str_replace("{time}", $remaining, $this->msg("messages.cooldown")));
@@ -50,8 +54,10 @@ class Main extends PluginBase {
                 }
             }
 
+            // Give axe
             $this->giveAxe($sender);
 
+            // Save cooldown
             $this->cooldowns->set($name, $time);
             $this->cooldowns->save();
 
@@ -67,34 +73,46 @@ class Main extends PluginBase {
 
         $axe = VanillaItems::DIAMOND_AXE();
 
-        // Name
-        $axe->setCustomName(TextFormat::colorize($config["name"]));
+        // Set custom name
+        $axe->setCustomName(TextFormat::colorize($config["name"] ?? "&bGAXE"));
 
-        // Lore
+        // Base lore
         $lore = [];
-        foreach($config["lore"] as $line) {
-            $lore[] = TextFormat::colorize($line);
+        if(isset($config["lore"]) && is_array($config["lore"])) {
+            foreach($config["lore"] as $line) {
+                $lore[] = TextFormat::colorize($line);
+            }
         }
 
-        // Enchants
-        $showEnchants = $config["show-enchants-in-lore"];
+        $showEnchants = $config["show-enchants-in-lore"] ?? true;
         $enchLore = [];
 
-        foreach($config["enchants"] as $enchString) {
-            [$enchName, $level] = explode(":", $enchString);
+        // Apply enchants
+        if(isset($config["enchants"]) && is_array($config["enchants"])) {
+            foreach($config["enchants"] as $enchString) {
 
-            $enchant = StringToEnchantmentParser::getInstance()->parse($enchName);
-            if($enchant !== null) {
-                $axe->addEnchantment($enchant->setLevel((int)$level));
+                if(!str_contains($enchString, ":")) continue;
 
-                if($showEnchants) {
-                    $enchLore[] = TextFormat::GRAY . ucfirst($enchName) . " " . $level;
+                [$enchName, $level] = explode(":", $enchString);
+
+                $enchant = StringToEnchantmentParser::getInstance()->parse($enchName);
+
+                if($enchant !== null) {
+                    $axe->addEnchantment(new EnchantmentInstance($enchant, (int)$level));
+
+                    if($showEnchants) {
+                        $enchLore[] = TextFormat::GRAY . ucfirst($enchName) . " " . $level;
+                    }
                 }
             }
         }
 
-        if($showEnchants) {
-            $lore = array_merge($lore, ["", ...$enchLore]);
+        // Add enchant lore if enabled
+        if($showEnchants && count($enchLore) > 0) {
+            $lore[] = ""; // spacer
+            foreach($enchLore as $line) {
+                $lore[] = $line;
+            }
         }
 
         $axe->setLore($lore);
@@ -103,6 +121,6 @@ class Main extends PluginBase {
     }
 
     private function msg(string $path): string {
-        return TextFormat::colorize($this->getConfig()->getNested($path));
+        return TextFormat::colorize($this->getConfig()->getNested($path) ?? "Config error");
     }
 }
